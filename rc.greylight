@@ -1,0 +1,60 @@
+#!/bin/sh
+# rc.greylight: start/stop the greylight policy daemon
+
+GREYLIGHT_BIN=/usr/local/sbin/greylight
+GREYLIGHT_CONF=/etc/greylight.conf
+GREYLIGHT_PID=/var/run/greylight.pid
+
+start() {
+  if [ -x "$GREYLIGHT_BIN" ]; then
+    echo "Starting greylight..."
+    # arrancar en background con nohup, guardar PID
+    nohup $GREYLIGHT_BIN -c $GREYLIGHT_CONF >/var/log/greylight.log 2>&1 &
+    echo $! > $GREYLIGHT_PID
+  else
+    echo "greylight binary not found: $GREYLIGHT_BIN"
+  fi
+}
+
+stop() {
+  if [ -f "$GREYLIGHT_PID" ]; then
+    PID=$(cat $GREYLIGHT_PID)
+    echo "Stopping greylight (PID $PID)..."
+    kill $PID 2>/dev/null
+    rm -f $GREYLIGHT_PID
+  else
+    echo "No PID file, greylight may not be running."
+  fi
+}
+
+restart() {
+  stop
+  sleep 1
+  start
+}
+
+status() {
+  if [ -f "$GREYLIGHT_PID" ]; then
+    PID=$(cat $GREYLIGHT_PID)
+    if ps -p $PID >/dev/null 2>&1; then
+      echo "greylight is running (PID $PID)."
+      return 0
+    else
+      echo "PID file exists but process not found."
+      return 1
+    fi
+  else
+    echo "greylight is not running."
+    return 3
+  fi
+}
+
+case "$1" in
+  start)   start ;;
+  stop)    stop ;;
+  restart) restart ;;
+  status)  status ;;
+  *)
+    echo "Usage: $0 {start|stop|restart|status}"
+    ;;
+esac
