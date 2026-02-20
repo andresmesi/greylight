@@ -16,8 +16,9 @@
 
 #define BUFSZ 8192
 #define MAX_IGNORE_RCPT 128
-#define HASH_SIZE 131072 
+#define HASH_SIZE 131072
 
+// --- Estructuras ---
 typedef struct {
     char **ips;    int ip_cnt;
     char **doms;   int dom_cnt;
@@ -55,6 +56,7 @@ typedef struct {
     int debug;
 } Config;
 
+// --- Globales ---
 static sqlite3 *db = NULL;
 static volatile sig_atomic_t running = 1;
 static Config cfg;
@@ -80,7 +82,8 @@ static void log_msg(const char *level, const char *fmt, ...) {
     strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", localtime(&now));
     fprintf(logf, "[%s] [%s] ", ts, level);
     vfprintf(logf, fmt, ap);
-    fprintf(logf, "\n"); fflush(logf);
+    fprintf(logf, "\n");
+    fflush(logf);
     va_end(ap);
 }
 
@@ -215,7 +218,7 @@ static void dump_passlist_to_db() {
 
 static void cleanup_ram() {
     time_t limit = time(NULL) - (cfg.pass_ttl_days * 86400);
-    time_t g_limit = time(NULL) - 86400; 
+    time_t g_limit = time(NULL) - 86400;
     for (int i = 0; i < HASH_SIZE; i++) {
         PassEntry **cp = &pass_table[i];
         while (*cp) {
@@ -307,7 +310,6 @@ static int handle_request(int fd) {
     if(sender_dom){
         for(int i=0; i<wl_mem.dom_cnt; i++) if(!strcasecmp(sender_dom, wl_mem.doms[i])) whitelisted=true;
     }
-    
     if(whitelisted) goto send_it;
 
     // 2. Ignore/Only RCPT logic
@@ -316,9 +318,9 @@ static int handle_request(int fd) {
     // 3. Key Logic
     char net24[64], key[1024];
     ip_to_cidr24(client_ip?client_ip:"", net24, sizeof(net24));
-    if(!strcasecmp(cfg.key_mode,"pair")) 
+    if(!strcasecmp(cfg.key_mode,"pair"))
         snprintf(key, sizeof(key), "%s|%s", net24, sender_dom?sender_dom:"");
-    else 
+    else
         snprintf(key, sizeof(key), "%s|%s|%s", net24, sender_dom?sender_dom:"", recipient?recipient:"");
 
     unsigned int h = hash_key(key);
@@ -339,7 +341,7 @@ static int handle_request(int fd) {
                 PassEntry *npe = malloc(sizeof(PassEntry));
                 npe->key = strdup(key); npe->last_seen = now; npe->hits = (*pg)->count + 1;
                 npe->next = pass_table[h]; pass_table[h] = npe;
-                
+
                 sqlite3_stmt *st;
                 sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO passlist VALUES(?1,?2,?3,'grey')", -1, &st, NULL);
                 sqlite3_bind_text(st,1,key,-1,SQLITE_TRANSIENT);
@@ -347,6 +349,7 @@ static int handle_request(int fd) {
                 sqlite3_step(st); sqlite3_finalize(st);
 
                 GreyEntry *t = *pg; *pg = t->next; free(t->key); free(t);
+                resp = "action=dunno\n\n";
             } else {
                 (*pg)->last_seen = now; (*pg)->count++;
                 resp = "action=defer_if_permit 450 Greylisted, retry later\n\n";
@@ -364,6 +367,8 @@ static int handle_request(int fd) {
 
 send_it:
     send(fd, resp, strlen(resp), 0);
+    if (cfg.debug) log_msg("DEBUG", "Request IP %s -> %s", client_ip ? client_ip : "-", resp);
+    
     free(client_ip); free(sender); free(recipient);
     return 0;
 }
@@ -376,6 +381,12 @@ int main(int argc, char **argv){
 
     config_load(conf_path);
     logf = fopen(cfg.log_path, "a");
+
+    if (!logf) {
+        perror("Error abriendo log");
+        return 1;
+    }
+
     if(sqlite3_open(cfg.db_path, &db) != SQLITE_OK) return 1;
 
     load_wl_cache();
@@ -384,7 +395,7 @@ int main(int argc, char **argv){
     signal(SIGINT, onsig); signal(SIGTERM, onsig);
     int s = socket(AF_INET, SOCK_STREAM, 0);
     int one=1; setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
-    struct sockaddr_in sa = {0}; sa.sin_family = AF_INET; 
+    struct sockaddr_in sa = {0}; sa.sin_family = AF_INET;
     sa.sin_port = htons(cfg.listen_port); inet_pton(AF_INET, cfg.listen_ip, &sa.sin_addr);
     if(bind(s, (struct sockaddr*)&sa, sizeof(sa)) < 0) return 1;
     listen(s, 128);
