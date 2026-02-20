@@ -1,42 +1,41 @@
 #!/bin/bash
 DB="/var/lib/greylight/greylight.sqlite"
 NOW=$(date +%s)
+# Comando para avisar al daemon que hay cambios
+UPDATE_META="UPDATE wl_meta SET value = $NOW WHERE key = 'last_update';"
 
 case "$1" in
   wl-ip)
     note="${3:-manual}"
-    sqlite3 "$DB" \
-      "INSERT OR IGNORE INTO wl_ip(ip,note,added_at) VALUES('$2','$note',$NOW);"
-    echo "Agregado IP $2 a wl_ip con nota '$note'"
+    sqlite3 "$DB" "INSERT OR IGNORE INTO wl_ip(ip,note,added_at) VALUES('$2','$note',$NOW); $UPDATE_META"
+    echo "Agregado IP $2 a wl_ip con nota '$note' (Cache notificada)"
     ;;
 
   rm-wl-ip)
-    sqlite3 "$DB" "DELETE FROM wl_ip WHERE ip='$2';"
-    echo "Eliminado IP $2 de wl_ip"
+    sqlite3 "$DB" "DELETE FROM wl_ip WHERE ip='$2'; $UPDATE_META"
+    echo "Eliminado IP $2 de wl_ip (Cache notificada)"
     ;;
 
   wl-cidr)
     note="${3:-manual}"
-    sqlite3 "$DB" \
-      "INSERT OR IGNORE INTO wl_cidr(cidr,note,added_at) VALUES('$2','$note',$NOW);"
-    echo "Agregado CIDR $2 a wl_cidr con nota '$note'"
+    sqlite3 "$DB" "INSERT OR IGNORE INTO wl_cidr(cidr,note,added_at) VALUES('$2','$note',$NOW); $UPDATE_META"
+    echo "Agregado CIDR $2 a wl_cidr con nota '$note' (Cache notificada)"
     ;;
 
   rm-wl-cidr)
-    sqlite3 "$DB" "DELETE FROM wl_cidr WHERE cidr='$2';"
-    echo "Eliminado CIDR $2 de wl_cidr"
+    sqlite3 "$DB" "DELETE FROM wl_cidr WHERE cidr='$2'; $UPDATE_META"
+    echo "Eliminado CIDR $2 de wl_cidr (Cache notificada)"
     ;;
 
   wl-domain)
     note="${3:-manual whitelist}"
-    sqlite3 "$DB" \
-      "INSERT OR IGNORE INTO wl_domain(domain,note,added_at) VALUES('$2','$note',$NOW);"
-    echo "Agregado dominio $2 a wl_domain con nota '$note'"
+    sqlite3 "$DB" "INSERT OR IGNORE INTO wl_domain(domain,note,added_at) VALUES('$2','$note',$NOW); $UPDATE_META"
+    echo "Agregado dominio $2 a wl_domain con nota '$note' (Cache notificada)"
     ;;
 
   rm-wl-domain)
-    sqlite3 "$DB" "DELETE FROM wl_domain WHERE domain='$2';"
-    echo "Eliminado dominio $2 de wl_domain"
+    sqlite3 "$DB" "DELETE FROM wl_domain WHERE domain='$2'; $UPDATE_META"
+    echo "Eliminado dominio $2 de wl_domain (Cache notificada)"
     ;;
 
   pass-pair)
@@ -50,6 +49,7 @@ case "$1" in
     cidr24="$(echo $ip | cut -d. -f1-3).0"
     key="${cidr24}|${dom}"
 
+    # Nota: No actualizamos wl_meta aquí porque passlist se consulta siempre en DB, no está en RAM
     sqlite3 "$DB" "
       INSERT INTO passlist(key,last_seen,hits,kind)
       VALUES('$key',$NOW,1,'$note')
